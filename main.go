@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ func main() {
 		RedirectURL:  "http://localhost:8080/callback",
 		Issuer:       "https://accounts.google.com",
 		Scopes:       []string{"openid", "profile", "email"},
+		CallbackFunc: PostProcessOAuth,
 	})
 
 	mux := http.NewServeMux()
@@ -27,4 +29,15 @@ func main() {
 	addr := ":8080"
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func PostProcessOAuth(user *authkit.User, writer http.ResponseWriter, request *http.Request) {
+	log.Println(user)
+
+	writeJSON(writer, user)
+}
+
+func writeJSON(writer http.ResponseWriter, message any) {
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(message)
 }

@@ -32,11 +32,13 @@ type Config struct {
 	RedirectURL  string
 	Scopes       []string
 	Issuer       string
+	CallbackFunc func(user *User, writer http.ResponseWriter, request *http.Request)
 }
 
 type Auth struct {
 	oauth2Config oauth2.Config
 	verifier     *oidc.IDTokenVerifier
+	callbackFunc func(user *User, writer http.ResponseWriter, request *http.Request)
 }
 
 func New(config Config) *Auth {
@@ -64,6 +66,7 @@ func New(config Config) *Auth {
 	return &Auth{
 		oauth2Config: oauth2Config,
 		verifier:     verifier,
+		callbackFunc: config.CallbackFunc,
 	}
 }
 
@@ -123,7 +126,11 @@ func (a *Auth) CallbackHandler() http.HandlerFunc {
 			Claims:  claims,
 		}
 
-		writer.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(writer).Encode(user)
+		if a.callbackFunc != nil {
+			a.callbackFunc(&user, writer, request)
+		} else {
+			writer.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(writer).Encode(user)
+		}
 	}
 }
