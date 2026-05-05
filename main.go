@@ -34,6 +34,9 @@ func main() {
 func PostProcessOAuth(user *authkit.User, writer http.ResponseWriter, request *http.Request) {
 	log.Println(user)
 
+	email := user.GetString("email")
+	log.Println("email:", email)
+
 	writeJSON(writer, user)
 }
 
