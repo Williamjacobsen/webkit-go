@@ -33,12 +33,19 @@ type Config struct {
 	Scopes       []string
 	Issuer       string
 	CallbackFunc func(user *User, writer http.ResponseWriter, request *http.Request)
+	Store        SessionStore
+	DBPath       string
+	CookieName   string
+	MaxAge       int
 }
 
 type Auth struct {
 	oauth2Config oauth2.Config
 	verifier     *oidc.IDTokenVerifier
 	callbackFunc func(user *User, writer http.ResponseWriter, request *http.Request)
+	store        SessionStore
+	cookieName   string
+	maxAge       int
 }
 
 func New(config Config) *Auth {
@@ -63,10 +70,36 @@ func New(config Config) *Auth {
 
 	verifier := provider.Verifier(&oidc.Config{ClientID: config.ClientID})
 
+	store := config.Store
+	if store == nil {
+		dbPath := config.DBPath
+		if dbPath == "" {
+			dbPath = "authkit.db"
+		}
+		sqliteStore, err := NewSQLiteStore(dbPath)
+		if err != nil {
+			panic("failed to create SQLite store: " + err.Error())
+		}
+		store = sqliteStore
+	}
+
+	cookieName := config.CookieName
+	if cookieName == "" {
+		cookieName = "authkit_session"
+	}
+
+	maxAge := config.MaxAge
+	if maxAge == 0 {
+		maxAge = 86400
+	}
+
 	return &Auth{
 		oauth2Config: oauth2Config,
 		verifier:     verifier,
 		callbackFunc: config.CallbackFunc,
+		store:        store,
+		cookieName:   cookieName,
+		maxAge:       maxAge,
 	}
 }
 
@@ -75,12 +108,6 @@ func (a *Auth) LoginHandler() http.HandlerFunc {
 		state := generateRandomState()
 		http.Redirect(writer, request, a.oauth2Config.AuthCodeURL(state), http.StatusFound)
 	}
-}
-
-func generateRandomState() string {
-	bytes := make([]byte, 16)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
 }
 
 func (a *Auth) CallbackHandler() http.HandlerFunc {
@@ -126,6 +153,21 @@ func (a *Auth) CallbackHandler() http.HandlerFunc {
 			Claims:  claims,
 		}
 
+		sessionID := generateSessionID()
+		if err := a.store.Save(sessionID, &user, a.maxAge); err != nil {
+			http.Error(writer, "failed to save session: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.SetCookie(writer, &http.Cookie{
+			Name:     a.cookieName,
+			Value:    sessionID,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   a.maxAge,
+		})
+
 		if a.callbackFunc != nil {
 			a.callbackFunc(&user, writer, request)
 		} else {
@@ -133,4 +175,44 @@ func (a *Auth) CallbackHandler() http.HandlerFunc {
 			json.NewEncoder(writer).Encode(user)
 		}
 	}
+}
+
+func (a *Auth) LogoutHandler() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		cookie, err := request.Cookie(a.cookieName)
+		if err == nil {
+			a.store.Delete(cookie.Value)
+		}
+
+		http.SetCookie(writer, &http.Cookie{
+			Name:     a.cookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   -1,
+		})
+
+		http.Redirect(writer, request, "/", http.StatusFound)
+	}
+}
+
+func (a *Auth) UserFromRequest(request *http.Request) (*User, error) {
+	cookie, err := request.Cookie(a.cookieName)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.store.Load(cookie.Value)
+}
+
+func generateSessionID() string {
+	bytes := make([]byte, 32)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+func generateRandomState() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
 }
