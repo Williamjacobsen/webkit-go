@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"net/http"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -29,6 +28,7 @@ type ProviderConfig struct {
 	IssuerURL            string
 	Scopes               []string
 	OnSuccessRedirectURL string
+	CallbackFunc         func(claims Claims)
 	provider             *gooidc.Provider
 	oauth2               *oauth2.Config
 }
@@ -105,13 +105,12 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 			return
 		}
 
-		log.Println(claims)
-		log.Println(claims.GetString("email"))
-
 		clearCookie(w, "state")
 		clearCookie(w, "code_verifier")
 
 		// TODO: Set session cookie.
+
+		pc.CallbackFunc(claims)
 
 		http.Redirect(w, r, pc.OnSuccessRedirectURL, http.StatusFound)
 	}
@@ -132,7 +131,7 @@ func (c Claims) GetBool(key string) (bool, error) {
 			return _bool, nil
 		}
 	}
-	return false, fmt.Errorf("Could not get key '&s' from claims.", key)
+	return false, fmt.Errorf("Could not get key '%s' from claims.", key)
 }
 
 func randomString(length int) string {
