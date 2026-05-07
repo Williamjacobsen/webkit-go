@@ -1,7 +1,9 @@
-package webkit
+package oidc
 
 import (
 	"net/http"
+
+	response "github.com/Williamjacobsen/webkit-go/response"
 )
 
 type ProviderConfig struct {
@@ -15,5 +17,6 @@ type ProviderConfig struct {
 
 func (pc *ProviderConfig) HandleLogin() http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
+		response.WriteJSON(writer, map[string]string{"Test": "Value"})
 	}
 }

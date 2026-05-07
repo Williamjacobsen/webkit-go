@@ -4,8 +4,9 @@ import (
 	"log"
 	"net/http"
 
-	env "github.com/Williamjacobsen/webkit-go/env"
-	oidc "github.com/Williamjacobsen/webkit-go/oidc"
+	"github.com/Williamjacobsen/webkit-go/env"
+	"github.com/Williamjacobsen/webkit-go/oidc"
+	"github.com/Williamjacobsen/webkit-go/response"
 
 	"github.com/joho/godotenv"
 )
@@ -24,7 +25,10 @@ func main() {
 		Scopes:       []string{"openid", "profile", "email"},
 	}
 
-	mux.HandleFunc("/", google.HandleLogin())
+	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		response.WriteJSON(writer, map[string]string{"Page": "Home"})
+	})
+	mux.HandleFunc("/google/auth", google.HandleLogin())
 
 	port := ":8080"
 	log.Println("Runnning on port :8080...")
