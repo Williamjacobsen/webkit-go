@@ -1,3 +1,12 @@
+// Package oidc implements the OpenID Connect (OIDC) authorization code flow
+// with PKCE (Proof Key for Code Exchange) for secure authentication.
+//
+// PKCE protects against authorization code interception by binding the
+// authorization code to the client session via a code_verifier stored in
+// an HttpOnly cookie. The code_challenge (SHA-256 hash of verifier) is
+// sent in the initial auth request, and the raw verifier is required
+// at the token exchange endpoint.
+
 package oidc
 
 import (
@@ -24,8 +33,20 @@ func (pc *ProviderConfig) HandleLogin() http.HandlerFunc {
 		verifier := generateRandomString(32)
 		challenge := generateCodeChallenge(verifier)
 
-		http.SetCookie(writer, &http.Cookie{Name: "state", Value: state})
-		http.SetCookie(writer, &http.Cookie{Name: "code_verifier", Value: verifier})
+		http.SetCookie(writer, &http.Cookie{
+			Name:     "state",
+			Value:    state,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Path:     "/",
+		})
+		http.SetCookie(writer, &http.Cookie{
+			Name:     "code_verifier",
+			Value:    verifier,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Path:     "/",
+		})
 
 		authURL := fmt.Sprintf("%s?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s&code_challenge=%s&code_challenge_method=S256",
 			pc.AuthURL,
