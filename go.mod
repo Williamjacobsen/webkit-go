@@ -1,4 +1,4 @@
-module github.com/Williamjacobsen/authkit-go
+module github.com/Williamjacobsen/webkit-go
 
 go 1.25.9
 

@@ -1,4 +1,4 @@
-package authkit
+package webkit
 
 import (
 	"net/http"

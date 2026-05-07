@@ -3,9 +3,10 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
-	"github.com/Williamjacobsen/authkit-go/authkit"
+	env "github.com/Williamjacobsen/webkit-go/env"
+	oidc "github.com/Williamjacobsen/webkit-go/oidc"
+
 	"github.com/joho/godotenv"
 )
 
@@ -14,9 +15,9 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	google := authkit.ProviderConfig{
-		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+	google := oidc.ProviderConfig{
+		ClientID:     env.GetValue("GOOGLE_CLIENT_ID"),
+		ClientSecret: env.GetValue("GOOGLE_CLIENT_SECRET"),
 		RedirectURL:  "http://localhost:8080/callback",
 		AuthURL:      "https://accounts.google.com/o/oauth2/auth",
 		TokenURL:     "https://oauth2.googleapis.com/token",
