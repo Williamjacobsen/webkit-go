@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -14,23 +15,27 @@ import (
 func main() {
 	godotenv.Load()
 
-	mux := http.NewServeMux()
-
-	google := oidc.ProviderConfig{
-		ClientID:     env.GetValue("GOOGLE_CLIENT_ID"),
-		ClientSecret: env.GetValue("GOOGLE_CLIENT_SECRET"),
-		RedirectURL:  "http://localhost:8080/callback",
-		AuthURL:      "https://accounts.google.com/o/oauth2/auth",
-		TokenURL:     "https://oauth2.googleapis.com/token",
-		Scopes:       []string{"openid", "profile", "email"},
+	google, err := oidc.New(context.Background(), oidc.ProviderConfig{
+		ClientID:             env.GetValue("GOOGLE_CLIENT_ID"),
+		ClientSecret:         env.GetValue("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:          "http://localhost:8080/login/google/callback",
+		IssuerURL:            "https://accounts.google.com",
+		Scopes:               []string{"openid", "profile", "email"},
+		OnSuccessRedirectURL: "http://localhost:8080/",
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		response.WriteJSON(writer, map[string]string{"Page": "Home"})
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		response.WriteJSON(w, map[string]string{"Page": "Home"})
 	})
 	mux.HandleFunc("/login/google", google.HandleLogin())
+	mux.HandleFunc("/login/google/callback", google.HandleCallback())
 
 	port := ":8080"
-	log.Println("Runnning on port :8080...")
+	log.Println("Running on port :8080...")
 	http.ListenAndServe(port, mux)
 }

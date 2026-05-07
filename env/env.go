@@ -8,8 +8,7 @@ import (
 func GetValue(key string) string {
 	value := os.Getenv(key)
 	if value == "" {
-		log.Println("Missing .env field:", key)
-		os.Exit(1)
+		log.Fatalln("Missing .env field:", key)
 	}
 	return value
 }
