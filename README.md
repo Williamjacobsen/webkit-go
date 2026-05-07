@@ -1,49 +1,20 @@
-# Authkit-go
+# webkit-go
 
-**Opinionated OpenID Connect (OIDC) authentication toolkit for Go APIs, with sessions, middleware, and clean net/http integration.**
+Minimal OpenID Connect (OIDC) authentication with PKCE for Go `net/http`.
 
----
+## Packages
 
-## Why Authkit-go?
-
-Adding OIDC authentication in Go usually means wiring together:
-
-- net/http
-- go-oidc
-- golang.org/x/oauth2
-
-…plus handling state, nonce, token verification, cookies, and middleware.
-
-`Authkit-go` gives you a **minimal, opinionated layer** on top of that:
-
-- 🔐 OIDC login flow (login + callback)
-- 🍪 Secure session cookies (signed)
-- 🧩 Middleware for protected routes
-- 👤 Simple user access via context
-- ⚙️ Built on standard `net/http`
-
-No frameworks. No magic. Just less boilerplate.
-
----
-
-## Features
-
-- OpenID Connect (OIDC) authentication
-- Secure cookie-based sessions
-- `RequireAuth` and `OptionalAuth` middleware
-- Context-based user access
-- Sensible security defaults (state, nonce, cookie flags)
-- Works with any OIDC provider
-
----
+| Package | Path | Purpose |
+|---------|------|---------|
+| `oidc` | `github.com/Williamjacobsen/webkit-go/oidc` | OIDC PKCE authorization code flow |
+| `response` | `github.com/Williamjacobsen/webkit-go/response` | JSON response helpers |
+| `env` | `github.com/Williamjacobsen/webkit-go/env` | Environment variable loading |
 
 ## Installation
 
 ```bash
-go get github.com/Williamjacobsen/authkit-go
+go get github.com/Williamjacobsen/webkit-go
 ```
-
----
 
 ## Quick Start
 
@@ -51,167 +22,99 @@ go get github.com/Williamjacobsen/authkit-go
 package main
 
 import (
-    "encoding/json"
-    "net/http"
+	"log"
+	"net/http"
 
-    "github.com/Williamjacobsen/authkit-go"
+	"github.com/Williamjacobsen/webkit-go/env"
+	"github.com/Williamjacobsen/webkit-go/oidc"
+	"github.com/Williamjacobsen/webkit-go/response"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
-    auth := authkit.New(authkit.Config{
-        ClientID:     "your-client-id",
-        ClientSecret: "your-client-secret",
-        RedirectURL:  "http://localhost:8080/callback",
-        CookieSecret: []byte("super-secret-key"),
-    })
+	godotenv.Load()
 
-    mux := http.NewServeMux()
+	mux := http.NewServeMux()
 
-    mux.Handle("/login", auth.LoginHandler())
-    mux.Handle("/callback", auth.CallbackHandler())
-    mux.Handle("/logout", auth.LogoutHandler())
+	google := oidc.ProviderConfig{
+		ClientID:     env.GetValue("GOOGLE_CLIENT_ID"),
+		ClientSecret: env.GetValue("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:  "http://localhost:8080/callback",
+		AuthURL:      "https://accounts.google.com/o/oauth2/auth",
+		TokenURL:     "https://oauth2.googleapis.com/token",
+		Scopes:       []string{"openid", "profile", "email"},
+	}
 
-    mux.Handle("/me",
-        auth.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            user, _ := authkit.UserFromContext(r.Context())
-            json.NewEncoder(w).Encode(user)
-        })),
-    )
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		response.WriteJSON(w, map[string]string{"Page": "Home"})
+	})
+	mux.HandleFunc("/login/google", google.HandleLogin())
 
-    http.ListenAndServe(":8080", mux)
+	port := ":8080"
+	log.Println("Running on port :8080...")
+	http.ListenAndServe(port, mux)
 }
 ```
 
----
+## How PKCE works
 
-## Middleware
+PKCE (Proof Key for Code Exchange, RFC 7636) protects against authorization code interception.
 
-### RequireAuth
+1. `HandleLogin()` generates a random `code_verifier` and its SHA-256 hash (`code_challenge`)
+2. The `code_verifier` is stored in an `HttpOnly` cookie
+3. The user is redirected to the provider with the `code_challenge` as a query parameter
+4. On callback, the `code_verifier` is sent along with the authorization code to the token endpoint
+5. The provider verifies `SHA-256(code_verifier) == code_challenge` before issuing tokens
 
-Protect routes that require authentication:
+An attacker who intercepts the authorization code cannot exchange it for tokens without the `code_verifier`.
 
-```go
-mux.Handle("/private", auth.RequireAuth(handler))
-```
+## OIDC package
 
-- Redirects to `/login` if unauthenticated
-- Injects user into context if authenticated
+Package `oidc` implements the OIDC authorization code flow with PKCE.
 
----
-
-### OptionalAuth
-
-Allows both anonymous and authenticated users:
+### ProviderConfig
 
 ```go
-mux.Handle("/public", auth.OptionalAuth(handler))
-```
-
----
-
-## Accessing the User
-
-```go
-user, ok := authkit.UserFromContext(r.Context())
-if !ok {
-    // not authenticated
+type ProviderConfig struct {
+	ClientID     string   // OIDC client ID
+	ClientSecret string   // OIDC client secret
+	RedirectURL  string   // Callback URL registered with the provider
+	AuthURL      string   // Provider's authorization endpoint
+	TokenURL     string   // Provider's token endpoint
+	Scopes       []string // e.g. openid, profile, email
 }
 ```
 
-### User structure
+### HandleLogin() http.HandlerFunc
+
+Initiates the OIDC login flow. Generates PKCE verifier and challenge, stores state and verifier in HttpOnly cookies, and redirects the user to the provider's authorization endpoint.
+
+## Response package
 
 ```go
-type User struct {
-    Subject string
-    Email   string
-    Name    string
-    Picture string
-}
+func WriteJSON(writer http.ResponseWriter, message any)
 ```
 
----
+Sets `Content-Type: application/json` and encodes the value as JSON. Returns HTTP 500 on encoding failure.
 
-## Session Management
-
-- Cookie-based sessions (signed)
-- No database required
-- Automatic expiry handling
-
-Built using secure cookie practices via gorilla/securecookie.
-
----
-
-## Security
-
-`Authkit-go` includes the essential protections required for OIDC:
-
-- ✅ State validation (CSRF protection)
-- ✅ Nonce validation (replay protection)
-- ✅ ID token verification
-- ✅ Secure cookies (HttpOnly, SameSite, Secure)
-
-You are still responsible for:
-
-- Using HTTPS in production
-- Keeping secrets safe
-- Configuring your OIDC provider correctly
-
----
-
-## Configuration
+## Env package
 
 ```go
-type Config struct {
-    ClientID     string
-    ClientSecret string
-    RedirectURL  string
-
-    Scopes []string // defaults to: openid, profile, email
-
-    CookieSecret []byte
-    CookieName   string
-}
+func GetValue(key string) string
 ```
 
----
+Reads an environment variable. Logs and exits with code 1 if the variable is empty or unset.
 
 ## Supported Providers
 
-Any provider that implements OpenID Connect should work.
-
-Examples include:
+Any provider that supports the OIDC authorization code flow with PKCE:
 
 - Google
 - Auth0
 - Okta
-- Azure AD
-
----
-
-## Design Philosophy
-
-- Minimal surface area
-- Explicit over magic
-- Secure by default
-- Easy to drop down to raw `net/http`
-
----
-
-## Roadmap
-
-- [ ] Multiple provider support helpers
-- [ ] Redis-backed sessions
-- [ ] JWT (stateless) mode
-- [ ] Role / claim-based middleware
-- [ ] CLI scaffolding
-
----
-
-## Contributing
-
-Contributions are welcome. Open an issue or submit a PR.
-
----
+- Azure AD / Entra ID
+- Keycloak
 
 ## License
 
