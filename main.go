@@ -28,7 +28,7 @@ func main() {
 	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		response.WriteJSON(writer, map[string]string{"Page": "Home"})
 	})
-	mux.HandleFunc("/google/auth", google.HandleLogin())
+	mux.HandleFunc("/login/google", google.HandleLogin())
 
 	port := ":8080"
 	log.Println("Runnning on port :8080...")
