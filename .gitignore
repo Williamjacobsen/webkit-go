@@ -32,6 +32,9 @@ go.work.sum
 *.sqlite
 *.sqlite3
 
+# Air hot reload
+tmp/
+
 # Editor/IDE
 # .idea/
 # .vscode/
