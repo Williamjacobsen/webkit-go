@@ -21,7 +21,7 @@ func main() {
 	}
 	db.Init_db()
 	defer db.Close()
-	init_db_tables(db)
+	// init_db_tables(db)
 
 	google, err := oidc.New(context.Background(), oidc.ProviderConfig{
 		ClientID:             env.GetValue("GOOGLE_CLIENT_ID"),
@@ -31,8 +31,9 @@ func main() {
 		Scopes:               []string{"openid", "profile", "email"},
 		OnSuccessRedirectURL: "http://localhost:8080/",
 		CallbackFunc: func(claims oidc.Claims) {
-			store_user(db, claims)
+			// store_user(db, claims)
 		},
+		DB: db,
 	})
 	if err != nil {
 		log.Fatal(err)

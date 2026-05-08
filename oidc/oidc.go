@@ -6,7 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
+
+	"github.com/Williamjacobsen/webkit-go/store"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -29,6 +32,7 @@ type ProviderConfig struct {
 	Scopes               []string
 	OnSuccessRedirectURL string
 	CallbackFunc         func(claims Claims)
+	DB                   *store.Store
 	provider             *gooidc.Provider
 	oauth2               *oauth2.Config
 }
@@ -108,6 +112,9 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 		clearCookie(w, "state")
 		clearCookie(w, "code_verifier")
 
+		init_db_tables(pc.DB) // Should called be called only once
+		store_user(pc.DB, claims)
+
 		// TODO: Set session cookie.
 
 		pc.CallbackFunc(claims)
@@ -156,4 +163,34 @@ func clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 	})
+}
+
+func init_db_tables(db *store.Store) {
+	db.DB.Exec(`CREATE TABLE IF NOT EXISTS users (
+		sub TEXT PRIMARY KEY,
+		email TEXT,
+		name TEXT,
+		picture TEXT
+	)`)
+}
+
+func store_user(db *store.Store, claims Claims) {
+	sub, _ := claims.GetString("sub")
+	email, _ := claims.GetString("email")
+	name, _ := claims.GetString("name")
+	picture, _ := claims.GetString("picture")
+
+	if sub == "" || email == "" || name == "" {
+		log.Println("Failed to get claims.")
+		return
+	}
+
+	_, err := db.DB.Exec(
+		`INSERT INTO users (sub, email, name, picture) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(sub) DO UPDATE SET email=excluded.email, name=excluded.name, picture=excluded.picture`,
+		sub, email, name, picture,
+	)
+	if err != nil {
+		log.Printf("Failed to store user: %v", err)
+	}
 }
