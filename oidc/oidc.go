@@ -16,27 +16,21 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type User struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Picture string `json:"picture"`
-}
-
 type Claims map[string]any
 
 type ProviderConfig struct {
-	ClientID              string
-	ClientSecret          string
-	RedirectURL           string
-	IssuerURL             string
-	Scopes                []string
-	OnSuccessRedirectURL  string
-	CallbackFunc          func()
-	DB                    *store.Store
-	provider              *gooidc.Provider
-	oauth2                *oauth2.Config
-	CookieLifetimeSeconds int
+	ClientID                    string
+	ClientSecret                string
+	RedirectURL                 string
+	IssuerURL                   string
+	Scopes                      []string
+	OnSuccessRedirectURL        string
+	NotAuthenticatedRedirectURL string
+	CallbackFunc                func()
+	DB                          *store.Store
+	provider                    *gooidc.Provider
+	oauth2                      *oauth2.Config
+	CookieLifetimeSeconds       int
 }
 
 func New(ctx context.Context, pc ProviderConfig) (*ProviderConfig, error) {
@@ -122,8 +116,8 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 		}
 
 		created_at := time.Now()
-		expires_at := created_at.Add(time.Duration(pc.CookieLifetime) * time.Second)
-		sessionId := createSessionCookie(w, pc.CookieLifetime)
+		expires_at := created_at.Add(time.Duration(pc.CookieLifetimeSeconds) * time.Second)
+		sessionId := createSessionCookie(w, pc.CookieLifetimeSeconds)
 		if err := storeSessionId(pc.DB, sessionId, created_at, expires_at, claims); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -186,9 +180,6 @@ func init_db_tables(db *store.Store) {
 	db.DB.Exec(`CREATE TABLE IF NOT EXISTS sessions (
 		sessionId TEXT PRIMARY KEY,
 		user_sub TEXT NOT NULL,
-		email TEXT,
-		name TEXT,
-		picture TEXT,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		expires_at DATETIME NOT NULL
 	)`)
@@ -232,22 +223,40 @@ func createSessionCookie(w http.ResponseWriter, life_time int) string {
 
 func storeSessionId(db *store.Store, sessionId string, created_at time.Time, expires_at time.Time, claims Claims) error {
 	sub, _ := claims.GetString("sub")
-	email, _ := claims.GetString("email")
-	name, _ := claims.GetString("name")
-	picture, _ := claims.GetString("picture")
 
-	if sub == "" || email == "" || name == "" {
-		return errors.New("Failed to get claims.")
+	if sub == "" {
+		return errors.New("Failed to get user_sub.")
 	}
 
 	_, err := db.DB.Exec(
-		`INSERT INTO sessions (sessionId, user_sub, email, name, picture, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sessionId, sub, email, name, picture, created_at, expires_at,
+		`INSERT INTO sessions (sessionId, user_sub, created_at, expires_at)
+VALUES (?, ?, ?, ?)`,
+		sessionId, sub, created_at, expires_at,
 	)
 	if err != nil {
 		return fmt.Errorf("Failed to store user: %v", err)
 	}
 
 	return nil
+}
+
+func session_is_valid(db *store.Store, sessionId string) bool {
+	var exists int
+	err := db.DB.QueryRow(
+		`SELECT 1 FROM sessions
+		 WHERE sessionId = ? AND expires_at > CURRENT_TIMESTAMP`,
+		sessionId,
+	).Scan(&exists)
+	return err == nil
+}
+
+func (pc *ProviderConfig) RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session_cookie")
+		if err != nil || !session_is_valid(pc.DB, cookie.Value) {
+			http.Redirect(w, r, pc.NotAuthenticatedRedirectURL, http.StatusFound)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

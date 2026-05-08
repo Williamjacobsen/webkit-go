@@ -23,12 +23,13 @@ func main() {
 	defer db.Close()
 
 	google, err := oidc.New(context.Background(), oidc.ProviderConfig{
-		ClientID:             env.GetValue("GOOGLE_CLIENT_ID"),
-		ClientSecret:         env.GetValue("GOOGLE_CLIENT_SECRET"),
-		RedirectURL:          "http://localhost:8080/login/google/callback",
-		IssuerURL:            "https://accounts.google.com",
-		Scopes:               []string{"openid", "profile", "email"},
-		OnSuccessRedirectURL: "http://localhost:8080/",
+		ClientID:                    env.GetValue("GOOGLE_CLIENT_ID"),
+		ClientSecret:                env.GetValue("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:                 "http://localhost:8080/login/google/callback",
+		IssuerURL:                   "https://accounts.google.com",
+		Scopes:                      []string{"openid", "profile", "email"},
+		OnSuccessRedirectURL:        "http://localhost:8080/",
+		NotAuthenticatedRedirectURL: "http://localhost:8080/not-authenticated",
 		CallbackFunc: func() {
 			log.Println("CallbackFunc")
 		},
@@ -46,6 +47,9 @@ func main() {
 	})
 	mux.HandleFunc("/login/google", google.HandleLogin())
 	mux.HandleFunc("/login/google/callback", google.HandleCallback())
+	mux.Handle("/auth-test", google.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response.WriteJSON(w, map[string]string{"Status": "Success"})
+	})))
 
 	port := ":8080"
 	log.Println("Running on port :8080...")
