@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Williamjacobsen/webkit-go/store"
 
@@ -119,7 +120,13 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		// TODO: Set session cookie.
+		created_at := time.Now()
+		life_time := 60 * 60 * 24 * 30
+		expires_at := created_at.Add(time.Duration(life_time) * time.Second)
+		sessionId := createSessionCookie(w, life_time)
+		if err := storeSessionId(pc.DB, sessionId, created_at, expires_at, claims); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 
 		pc.CallbackFunc()
 
@@ -176,6 +183,15 @@ func init_db_tables(db *store.Store) {
 		name TEXT,
 		picture TEXT
 	)`)
+	db.DB.Exec(`CREATE TABLE IF NOT EXISTS sessions (
+		sessionId TEXT PRIMARY KEY,
+		user_sub TEXT NOT NULL,
+		email TEXT,
+		name TEXT,
+		picture TEXT,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		expires_at DATETIME NOT NULL
+	)`)
 }
 
 func store_user(db *store.Store, claims Claims) error {
@@ -192,6 +208,42 @@ func store_user(db *store.Store, claims Claims) error {
 		`INSERT INTO users (sub, email, name, picture) VALUES (?, ?, ?, ?)
 		 ON CONFLICT(sub) DO UPDATE SET email=excluded.email, name=excluded.name, picture=excluded.picture`,
 		sub, email, name, picture,
+	)
+	if err != nil {
+		return fmt.Errorf("Failed to store user: %v", err)
+	}
+
+	return nil
+}
+
+func createSessionCookie(w http.ResponseWriter, life_time int) string {
+	sessionId := randomString(32)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session_cookie",
+		Value:    sessionId,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   false,
+		MaxAge:   life_time,
+	})
+	return sessionId
+}
+
+func storeSessionId(db *store.Store, sessionId string, created_at time.Time, expires_at time.Time, claims Claims) error {
+	sub, _ := claims.GetString("sub")
+	email, _ := claims.GetString("email")
+	name, _ := claims.GetString("name")
+	picture, _ := claims.GetString("picture")
+
+	if sub == "" || email == "" || name == "" {
+		return errors.New("Failed to get claims.")
+	}
+
+	_, err := db.DB.Exec(
+		`INSERT INTO sessions (sessionId, user_sub, email, name, picture, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sessionId, sub, email, name, picture, created_at, expires_at,
 	)
 	if err != nil {
 		return fmt.Errorf("Failed to store user: %v", err)
