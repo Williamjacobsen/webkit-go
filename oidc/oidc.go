@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/Williamjacobsen/webkit-go/store"
@@ -115,7 +115,9 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 		clearCookie(w, "state")
 		clearCookie(w, "code_verifier")
 
-		store_user(pc.DB, claims)
+		if err := store_user(pc.DB, claims); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 
 		// TODO: Set session cookie.
 
@@ -176,15 +178,14 @@ func init_db_tables(db *store.Store) {
 	)`)
 }
 
-func store_user(db *store.Store, claims Claims) {
+func store_user(db *store.Store, claims Claims) error {
 	sub, _ := claims.GetString("sub")
 	email, _ := claims.GetString("email")
 	name, _ := claims.GetString("name")
 	picture, _ := claims.GetString("picture")
 
 	if sub == "" || email == "" || name == "" {
-		log.Println("Failed to get claims.")
-		return
+		return errors.New("Failed to get claims.")
 	}
 
 	_, err := db.DB.Exec(
@@ -193,6 +194,8 @@ func store_user(db *store.Store, claims Claims) {
 		sub, email, name, picture,
 	)
 	if err != nil {
-		log.Printf("Failed to store user: %v", err)
+		return fmt.Errorf("Failed to store user: %v", err)
 	}
+
+	return nil
 }

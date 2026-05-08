@@ -21,7 +21,6 @@ func main() {
 	}
 	db.Init_db()
 	defer db.Close()
-	// init_db_tables(db)
 
 	google, err := oidc.New(context.Background(), oidc.ProviderConfig{
 		ClientID:             env.GetValue("GOOGLE_CLIENT_ID"),
