@@ -31,26 +31,29 @@ type ProviderConfig struct {
 	IssuerURL            string
 	Scopes               []string
 	OnSuccessRedirectURL string
-	CallbackFunc         func(claims Claims)
+	CallbackFunc         func()
 	DB                   *store.Store
 	provider             *gooidc.Provider
 	oauth2               *oauth2.Config
 }
 
-func New(ctx context.Context, cfg ProviderConfig) (*ProviderConfig, error) {
-	provider, err := gooidc.NewProvider(ctx, cfg.IssuerURL)
+func New(ctx context.Context, pc ProviderConfig) (*ProviderConfig, error) {
+	provider, err := gooidc.NewProvider(ctx, pc.IssuerURL)
 	if err != nil {
 		return nil, err
 	}
-	cfg.provider = provider
-	cfg.oauth2 = &oauth2.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		RedirectURL:  cfg.RedirectURL,
-		Scopes:       cfg.Scopes,
+	pc.provider = provider
+	pc.oauth2 = &oauth2.Config{
+		ClientID:     pc.ClientID,
+		ClientSecret: pc.ClientSecret,
+		RedirectURL:  pc.RedirectURL,
+		Scopes:       pc.Scopes,
 		Endpoint:     provider.Endpoint(),
 	}
-	return &cfg, nil
+
+	init_db_tables(pc.DB)
+
+	return &pc, nil
 }
 
 func (pc *ProviderConfig) HandleLogin() http.HandlerFunc {
@@ -112,12 +115,11 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 		clearCookie(w, "state")
 		clearCookie(w, "code_verifier")
 
-		init_db_tables(pc.DB) // Should called be called only once
 		store_user(pc.DB, claims)
 
 		// TODO: Set session cookie.
 
-		pc.CallbackFunc(claims)
+		pc.CallbackFunc()
 
 		http.Redirect(w, r, pc.OnSuccessRedirectURL, http.StatusFound)
 	}
