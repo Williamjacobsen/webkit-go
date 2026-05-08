@@ -26,16 +26,17 @@ type User struct {
 type Claims map[string]any
 
 type ProviderConfig struct {
-	ClientID             string
-	ClientSecret         string
-	RedirectURL          string
-	IssuerURL            string
-	Scopes               []string
-	OnSuccessRedirectURL string
-	CallbackFunc         func()
-	DB                   *store.Store
-	provider             *gooidc.Provider
-	oauth2               *oauth2.Config
+	ClientID              string
+	ClientSecret          string
+	RedirectURL           string
+	IssuerURL             string
+	Scopes                []string
+	OnSuccessRedirectURL  string
+	CallbackFunc          func()
+	DB                    *store.Store
+	provider              *gooidc.Provider
+	oauth2                *oauth2.Config
+	CookieLifetimeSeconds int
 }
 
 func New(ctx context.Context, pc ProviderConfig) (*ProviderConfig, error) {
@@ -121,9 +122,8 @@ func (pc *ProviderConfig) HandleCallback() http.HandlerFunc {
 		}
 
 		created_at := time.Now()
-		life_time := 60 * 60 * 24 * 30
-		expires_at := created_at.Add(time.Duration(life_time) * time.Second)
-		sessionId := createSessionCookie(w, life_time)
+		expires_at := created_at.Add(time.Duration(pc.CookieLifetime) * time.Second)
+		sessionId := createSessionCookie(w, pc.CookieLifetime)
 		if err := storeSessionId(pc.DB, sessionId, created_at, expires_at, claims); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}

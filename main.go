@@ -32,7 +32,8 @@ func main() {
 		CallbackFunc: func() {
 			log.Println("CallbackFunc")
 		},
-		DB: db,
+		DB:                    db,
+		CookieLifetimeSeconds: 60 * 60 * 24 * 30,
 	})
 	if err != nil {
 		log.Fatal(err)
